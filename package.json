@@ -4,7 +4,7 @@
   "description": "Backend for educational platform",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js", // To start the server in Render
+    "start": "node server.js",
     "test": "jest"
   },
   "dependencies": {
@@ -19,6 +19,6 @@
     "supertest": "^6.0.1"
   },
   "engines": {
-    "node": "14.x"  // Optional: Specify Node version for Render
+    "node": "14.x"
   }
 }
