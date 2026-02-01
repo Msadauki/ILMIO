@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const learningService = require('../services/learningService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Create a new class/session
 router.post('/create', authMiddleware, async (req, res) => {
