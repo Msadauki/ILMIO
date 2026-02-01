@@ -1,7 +1,8 @@
-const express = require('express');
+middlewareiddlewareeiddleware express = require('express');
 const router = express.Router();
 const learningService = require('../services/learningService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Create an exam
 router.post('/create', authMiddleware, async (req, res) => {
