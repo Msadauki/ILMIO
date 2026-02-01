@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const messagingService = require('../services/messagingService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Send a message
 router.post('/send', authMiddleware, async (req, res) => {
