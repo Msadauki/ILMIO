@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const walletService = require('../services/walletService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Get user wallet
 router.get('/', authMiddleware, async (req, res) => {
