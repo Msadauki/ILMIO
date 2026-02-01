@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const certificateService = require('../services/certificateService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Award a certificate
 router.post('/award', authMiddleware, async (req, res) => {
