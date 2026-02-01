@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const learningService = require('../services/learningService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Enable calculator for a user in a live session
 router.post('/enable-calculator', authMiddleware, async (req, res) => {
