@@ -3,6 +3,7 @@ const router = express.Router();
 const userService = require('../services/userService');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../config/serverConfig');
+const pool = require('../config/db');
 
 router.post('/register', async (req, res) => {
   try {
