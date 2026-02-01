@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminService = require('../services/adminService');
 const authMiddleware = require('../middleware/authMiddleware');
+const pool = require('../config/db');
 
 // Ban a user
 router.post('/ban', authMiddleware, async (req, res) => {
