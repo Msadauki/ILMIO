@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+dbConfig' pool = require('../config/db');
 
 async function createCertificate({ userId, course, grade }) {
   const query = `
