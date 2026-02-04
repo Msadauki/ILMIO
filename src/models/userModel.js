@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 
 async function createUser({ username, email, password, role = 'student' }) {
