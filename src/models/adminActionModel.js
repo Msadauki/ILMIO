@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+dbConfig' pool = require('../config/db');
 
 async function logAdminAction({ adminId, userId, action, reason }) {
   const query = `
