@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+const pool = require('../config/db');
 
 async function createProfile(userId, bio = '', visibility = 'private') {
   const query = `
