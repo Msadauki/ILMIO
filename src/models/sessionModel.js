@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+const pool = require('../config/db');
 
 async function createSession({ title, teacherId, maxParticipants = 50 }) {
   const query = `
