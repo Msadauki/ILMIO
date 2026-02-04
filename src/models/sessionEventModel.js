@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+const pool = require('../config/db');
 
 async function logEvent(sessionId, userId, action, meta = {}) {
   const query = `
