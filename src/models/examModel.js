@@ -1,4 +1,4 @@
-const pool = require('../config/dbConfig');
+const pool = require('../config/db');
 
 async function createExam({ title, sessionId, duration, allowCalculator = false }) {
   const query = `
