@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-// Import routes from src/api
+// Import API routes
 const authRoutes = require('./api/auth');
 const userRoutes = require('./api/users');
 const walletRoutes = require('./api/wallet');
@@ -15,7 +15,7 @@ const dashboardRoutes = require('./api/dashboard');
 
 app.use(express.json());
 
-// Mount API routes
+// Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/wallet', walletRoutes);
@@ -27,7 +27,7 @@ app.use('/api/certificates', certificatesRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// Root test
+// Health check
 app.get('/', (req, res) => {
   res.status(200).send('ILMIO backend live');
 });
