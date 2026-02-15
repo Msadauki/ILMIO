@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
 });
 
 /* ===========================
@@ -71,7 +71,7 @@ createSchema();
 =========================== */
 
 app.get("/", (req, res) => {
-  res.send("ILMIO BACKEND VERSION 2 RUNNING");
+  res.send("ILMIO BACKEND VERSION 3 RUNNING");
 });
 
 /* ===========================
@@ -91,6 +91,7 @@ app.post("/api/auth/register", async (req, res) => {
     try {
       await client.query("BEGIN");
 
+      // Check if email exists
       const existing = await client.query(
         "SELECT id FROM users WHERE email = $1",
         [email]
@@ -100,8 +101,10 @@ app.post("/api/auth/register", async (req, res) => {
         return res.status(400).json({ error: "Email already exists" });
       }
 
+      // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
+      // Insert user
       const userResult = await client.query(
         `INSERT INTO users (username, email, password, role)
          VALUES ($1, $2, $3, $4)
@@ -111,11 +114,13 @@ app.post("/api/auth/register", async (req, res) => {
 
       const user = userResult.rows[0];
 
+      // Insert profile
       await client.query(
         `INSERT INTO profiles (user_id) VALUES ($1)`,
         [user.id]
       );
 
+      // Insert wallet
       await client.query(
         `INSERT INTO wallets (user_id) VALUES ($1)`,
         [user.id]
@@ -125,7 +130,7 @@ app.post("/api/auth/register", async (req, res) => {
 
       res.status(201).json({
         message: "User registered successfully",
-        user
+        user,
       });
 
     } catch (err) {
@@ -147,6 +152,11 @@ app.post("/api/auth/register", async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
+
+  if (!process.env.JWT_SECRET) {
+    console.error("JWT_SECRET not set in environment");
+    return res.status(500).json({ error: "Server JWT configuration error" });
+  }
 
   try {
     const result = await pool.query(
@@ -174,7 +184,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     res.json({
       message: "Login successful",
-      token
+      token,
     });
 
   } catch (err) {
@@ -188,5 +198,5 @@ app.post("/api/auth/login", async (req, res) => {
 =========================== */
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`ILMIO Backend running on port ${PORT}`);
 });
