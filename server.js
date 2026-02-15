@@ -14,19 +14,18 @@ const PORT = process.env.PORT || 3000;
 /* ===========================
    DATABASE CONNECTION
 =========================== */
-
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
 /* ===========================
-   CREATE FULL ILMIO SCHEMA
+   FULL ILMIO SCHEMA
 =========================== */
-
-async function createSchema() {
+async function createFullSchema() {
   try {
     await pool.query(`
+      -- USERS
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(100) NOT NULL,
@@ -39,6 +38,7 @@ async function createSchema() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- PROFILES
       CREATE TABLE IF NOT EXISTS profiles (
         id SERIAL PRIMARY KEY,
         user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -49,6 +49,7 @@ async function createSchema() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- WALLETS
       CREATE TABLE IF NOT EXISTS wallets (
         id SERIAL PRIMARY KEY,
         user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -56,28 +57,94 @@ async function createSchema() {
         currency VARCHAR(10) DEFAULT 'USD',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- WALLET TRANSACTIONS
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id SERIAL PRIMARY KEY,
+        wallet_id INTEGER REFERENCES wallets(id) ON DELETE CASCADE,
+        amount NUMERIC(12,2) NOT NULL,
+        type VARCHAR(50),
+        reference TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- CLASSES (LIVE SESSIONS)
+      CREATE TABLE IF NOT EXISTS classes (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        instructor_id INTEGER REFERENCES users(id),
+        price NUMERIC(12,2) DEFAULT 0,
+        is_live BOOLEAN DEFAULT false,
+        start_time TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- CLASS PARTICIPANTS
+      CREATE TABLE IF NOT EXISTS class_participants (
+        id SERIAL PRIMARY KEY,
+        class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- EXAMS
+      CREATE TABLE IF NOT EXISTS exams (
+        id SERIAL PRIMARY KEY,
+        class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+        title VARCHAR(255),
+        duration_minutes INTEGER,
+        total_marks INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- EXAM RESULTS
+      CREATE TABLE IF NOT EXISTS exam_results (
+        id SERIAL PRIMARY KEY,
+        exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        score INTEGER,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- MESSAGES
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        sender_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT,
+        is_read BOOLEAN DEFAULT false,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- CERTIFICATES
+      CREATE TABLE IF NOT EXISTS certificates (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+        certificate_code VARCHAR(100) UNIQUE,
+        issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
-    console.log("ILMIO schema ensured.");
+    console.log("Full ILMIO schema ensured.");
   } catch (err) {
-    console.error("Schema creation error:", err);
+    console.error("Full schema creation error:", err);
   }
 }
 
-createSchema();
+createFullSchema();
 
 /* ===========================
    HEALTH CHECK
 =========================== */
-
 app.get("/", (req, res) => {
-  res.send("ILMIO BACKEND VERSION 3 RUNNING");
+  res.send("ILMIO BACKEND VERSION 4 RUNNING");
 });
 
 /* ===========================
    REGISTER
 =========================== */
-
 app.post("/api/auth/register", async (req, res) => {
   const { username, email, password, role } = req.body;
 
@@ -149,7 +216,6 @@ app.post("/api/auth/register", async (req, res) => {
 /* ===========================
    LOGIN
 =========================== */
-
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -196,7 +262,6 @@ app.post("/api/auth/login", async (req, res) => {
 /* ===========================
    START SERVER
 =========================== */
-
 app.listen(PORT, () => {
   console.log(`ILMIO Backend running on port ${PORT}`);
 });
