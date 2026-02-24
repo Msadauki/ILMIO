@@ -4,7 +4,6 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const cors = require('cors');
-require('dotenv').config();
 
 const app = express();
 app.use(express.json());
@@ -27,10 +26,8 @@ const pool = new Pool({
 const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-
   const token = authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Invalid token' });
-
   try {
     const decoded = jwt.verify(token, SECRET_KEY);
     req.user = decoded;
@@ -56,27 +53,19 @@ const hashPassword = async (password) => {
 // --------------------
 // Auth Routes
 // --------------------
-
-// Register
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, role } = req.body;
   if (!username || !email || !password || !role)
     return res.status(400).json({ error: 'Missing fields' });
-
   try {
     const hashed = await hashPassword(password);
     const result = await pool.query(
       'INSERT INTO users(username, email, password, role) VALUES($1,$2,$3,$4) RETURNING id, username, email, role',
       [username, email, hashed, role]
     );
-
-    // Create profile and wallet automatically
+    // Create wallet and profile
     await pool.query('INSERT INTO profiles(user_id) VALUES($1)', [result.rows[0].id]);
-    await pool.query('INSERT INTO wallets(user_id, balance, currency) VALUES($1, 0.00, $2)', [
-      result.rows[0].id,
-      'USD',
-    ]);
-
+    await pool.query('INSERT INTO wallets(user_id,balance,currency) VALUES($1,0.00,$2)', [result.rows[0].id, 'USD']);
     res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ error: 'Email already exists' });
@@ -85,19 +74,15 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Login
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Missing fields' });
-
   try {
     const userRes = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
     if (userRes.rowCount === 0) return res.status(400).json({ error: 'Invalid credentials' });
-
     const user = userRes.rows[0];
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: 'Invalid credentials' });
-
     const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '7d' });
     res.json({ message: 'Login successful', token });
   } catch (err) {
@@ -109,15 +94,12 @@ app.post('/api/auth/login', async (req, res) => {
 // --------------------
 // Classes Routes
 // --------------------
-
-// Create class (any user can create; they become creator)
 app.post('/api/classes', authMiddleware, async (req, res) => {
   const { title, description } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
-
   try {
     const result = await pool.query(
-      'INSERT INTO classes(title, description, creator_id) VALUES($1, $2, $3) RETURNING *',
+      'INSERT INTO classes(title, description, instructor_id) VALUES($1,$2,$3) RETURNING id,title,description,instructor_id',
       [title, description || '', req.user.id]
     );
     res.status(201).json(result.rows[0]);
@@ -127,7 +109,6 @@ app.post('/api/classes', authMiddleware, async (req, res) => {
   }
 });
 
-// Get all classes
 app.get('/api/classes', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM classes ORDER BY id');
@@ -138,14 +119,10 @@ app.get('/api/classes', authMiddleware, async (req, res) => {
   }
 });
 
-// Student joins class
 app.post('/api/classes/:id/join', authMiddleware, async (req, res) => {
   const classId = req.params.id;
   try {
-    await pool.query('INSERT INTO class_students(class_id, user_id) VALUES($1,$2)', [
-      classId,
-      req.user.id,
-    ]);
+    await pool.query('INSERT INTO class_students(class_id,user_id) VALUES($1,$2)', [classId, req.user.id]);
     res.json({ message: 'Joined class successfully' });
   } catch (err) {
     console.error(err);
@@ -156,26 +133,15 @@ app.post('/api/classes/:id/join', authMiddleware, async (req, res) => {
 // --------------------
 // Exams Routes
 // --------------------
-
-// Create exam (only class creator or admin)
 app.post('/api/exams', authMiddleware, async (req, res) => {
   const { classId, title, totalMarks } = req.body;
-  if (!classId || !title || !totalMarks) return res.status(400).json({ error: 'Missing fields' });
-
+  if (!classId || !title || !totalMarks)
+    return res.status(400).json({ error: 'Missing fields' });
   try {
-    const classRes = await pool.query('SELECT * FROM classes WHERE id=$1', [classId]);
-    if (classRes.rowCount === 0) return res.status(404).json({ error: 'Class not found' });
-
-    const classData = classRes.rows[0];
-    if (classData.creator_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only class creator or admin can create exams' });
-    }
-
     const result = await pool.query(
-      'INSERT INTO exams(class_id, title, total_marks, created_by) VALUES($1,$2,$3,$4) RETURNING *',
+      'INSERT INTO exams(class_id, title, total_marks, creator_id) VALUES($1,$2,$3,$4) RETURNING id,title,total_marks,class_id',
       [classId, title, totalMarks, req.user.id]
     );
-
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -183,19 +149,17 @@ app.post('/api/exams', authMiddleware, async (req, res) => {
   }
 });
 
-// Submit exam (students only)
 app.post('/api/exams/:id/submit', authMiddleware, async (req, res) => {
   const examId = req.params.id;
   const { score } = req.body;
   if (score == null) return res.status(400).json({ error: 'Score required' });
-
   try {
-    await pool.query('INSERT INTO exam_submissions(exam_id, user_id, score) VALUES($1,$2,$3)', [
+    await pool.query('INSERT INTO exam_submissions(exam_id,user_id,score) VALUES($1,$2,$3)', [
       examId,
       req.user.id,
       score,
     ]);
-    await pool.query('INSERT INTO certificates(user_id, exam_id, score) VALUES($1,$2,$3)', [
+    await pool.query('INSERT INTO certificates(user_id,exam_id,score) VALUES($1,$2,$3)', [
       req.user.id,
       examId,
       score,
@@ -207,7 +171,6 @@ app.post('/api/exams/:id/submit', authMiddleware, async (req, res) => {
   }
 });
 
-// Get certificates
 app.get('/api/certificates', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM certificates WHERE user_id=$1', [req.user.id]);
@@ -234,12 +197,8 @@ app.get('/api/wallet', authMiddleware, async (req, res) => {
 app.post('/api/wallet/topup', authMiddleware, async (req, res) => {
   const { amount } = req.body;
   if (!amount) return res.status(400).json({ error: 'Amount required' });
-
   try {
-    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE user_id=$2', [
-      amount,
-      req.user.id,
-    ]);
+    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE user_id=$2', [amount, req.user.id]);
     res.json({ message: 'Wallet topped up successfully' });
   } catch (err) {
     console.error(err);
@@ -250,6 +209,5 @@ app.post('/api/wallet/topup', authMiddleware, async (req, res) => {
 // --------------------
 // Start Server
 // --------------------
-app.get('/', (req, res) => res.send('ILMIO BACKEND VERSION 6 RUNNING'));
-
+app.get('/', (req, res) => res.send('ILMIO BACKEND VERSION 5 RUNNING'));
 app.listen(PORT, () => console.log(`ILMIO backend running on port ${PORT}`));
