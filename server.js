@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
 app.use(express.json());
@@ -16,21 +17,19 @@ const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.JWT_SECRET || 'ilmio_super_secret_key';
 
 const pool = new Pool({
-  connectionString:
-    process.env.DATABASE_URL ||
-    'postgresql://masilmio:vR1ux0bXnzlq5RI0eQgqQbcZVMAj06TF@dpg-d5v1u8kr85hc73dtn8o0-a/ilmiodb',
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL || 'postgresql://masilmio:vR1ux0bXnzlq5RI0eQgqQbcZVMAj06TF@dpg-d5v1u8kr85hc73dtn8o0-a/ilmiodb',
+  ssl: { rejectUnauthorized: false },
 });
 
 // --------------------
 // Middleware
 // --------------------
-const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader)
-    return res.status(401).json({ error: 'No token provided' });
+const authMiddleware = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ error: 'No token provided' });
 
   const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Invalid token' });
 
   try {
     const decoded = jwt.verify(token, SECRET_KEY);
@@ -42,88 +41,64 @@ const authMiddleware = (req, res, next) => {
 };
 
 const adminMiddleware = (req, res, next) => {
-  if (req.user.role !== 'admin')
-    return res.status(403).json({ error: 'Admin only' });
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 };
 
 // --------------------
-// Health Check
+// Utility
 // --------------------
-app.get('/', (req, res) => {
-  res.json({ message: 'ILMIO Backend Running ✅' });
-});
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+};
 
 // --------------------
-// AUTH
+// Auth Routes
 // --------------------
 
+// Register
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, role } = req.body;
-
   if (!username || !email || !password || !role)
     return res.status(400).json({ error: 'Missing fields' });
 
   try {
-    const hashed = await bcrypt.hash(password, 10);
-
+    const hashed = await hashPassword(password);
     const result = await pool.query(
-      `INSERT INTO users(username, email, password, role)
-       VALUES($1,$2,$3,$4)
-       RETURNING id, username, email, role`,
+      'INSERT INTO users(username, email, password, role) VALUES($1,$2,$3,$4) RETURNING id, username, email, role',
       [username, email, hashed, role]
     );
 
-    await pool.query(
-      'INSERT INTO profiles(user_id) VALUES($1)',
-      [result.rows[0].id]
-    );
+    // Create profile and wallet automatically
+    await pool.query('INSERT INTO profiles(user_id) VALUES($1)', [result.rows[0].id]);
+    await pool.query('INSERT INTO wallets(user_id, balance, currency) VALUES($1, 0.00, $2)', [
+      result.rows[0].id,
+      'USD',
+    ]);
 
-    await pool.query(
-      'INSERT INTO wallets(user_id,balance,currency) VALUES($1,0,$2)',
-      [result.rows[0].id, 'USD']
-    );
-
-    res.status(201).json({
-      message: 'User registered successfully',
-      user: result.rows[0]
-    });
+    res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
   } catch (err) {
-    if (err.code === '23505')
-      return res.status(400).json({ error: 'Email already exists' });
-
+    if (err.code === '23505') return res.status(400).json({ error: 'Email already exists' });
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
+// Login
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password)
-    return res.status(400).json({ error: 'Missing fields' });
+  if (!email || !password) return res.status(400).json({ error: 'Missing fields' });
 
   try {
-    const userRes = await pool.query(
-      'SELECT * FROM users WHERE email=$1',
-      [email]
-    );
-
-    if (userRes.rowCount === 0)
-      return res.status(400).json({ error: 'Invalid credentials' });
+    const userRes = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
+    if (userRes.rowCount === 0) return res.status(400).json({ error: 'Invalid credentials' });
 
     const user = userRes.rows[0];
-
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(400).json({ error: 'Invalid credentials' });
+    if (!match) return res.status(400).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      SECRET_KEY,
-      { expiresIn: '7d' }
-    );
-
+    const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '7d' });
     res.json({ message: 'Login successful', token });
   } catch (err) {
     console.error(err);
@@ -132,24 +107,19 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // --------------------
-// CLASSES
+// Classes Routes
 // --------------------
 
-// Create class (Admin only)
-app.post('/api/classes', authMiddleware, adminMiddleware, async (req, res) => {
+// Create class (any user can create; they become creator)
+app.post('/api/classes', authMiddleware, async (req, res) => {
   const { title, description } = req.body;
-
-  if (!title)
-    return res.status(400).json({ error: 'Title required' });
+  if (!title) return res.status(400).json({ error: 'Title required' });
 
   try {
     const result = await pool.query(
-      `INSERT INTO classes(title, description)
-       VALUES($1,$2)
-       RETURNING *`,
-      [title, description || '']
+      'INSERT INTO classes(title, description, creator_id) VALUES($1, $2, $3) RETURNING *',
+      [title, description || '', req.user.id]
     );
-
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -160,9 +130,7 @@ app.post('/api/classes', authMiddleware, adminMiddleware, async (req, res) => {
 // Get all classes
 app.get('/api/classes', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM classes ORDER BY id'
-    );
+    const result = await pool.query('SELECT * FROM classes ORDER BY id');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -170,38 +138,80 @@ app.get('/api/classes', authMiddleware, async (req, res) => {
   }
 });
 
-// Join class (Students only)
+// Student joins class
 app.post('/api/classes/:id/join', authMiddleware, async (req, res) => {
   const classId = req.params.id;
+  try {
+    await pool.query('INSERT INTO class_students(class_id, user_id) VALUES($1,$2)', [
+      classId,
+      req.user.id,
+    ]);
+    res.json({ message: 'Joined class successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: 'Failed to join class' });
+  }
+});
 
-  if (req.user.role !== 'student')
-    return res.status(403).json({ error: 'Students only' });
+// --------------------
+// Exams Routes
+// --------------------
+
+// Create exam (only class creator or admin)
+app.post('/api/exams', authMiddleware, async (req, res) => {
+  const { classId, title, totalMarks } = req.body;
+  if (!classId || !title || !totalMarks) return res.status(400).json({ error: 'Missing fields' });
 
   try {
-    // Check class exists
-    const classCheck = await pool.query(
-      'SELECT id FROM classes WHERE id=$1',
-      [classId]
+    const classRes = await pool.query('SELECT * FROM classes WHERE id=$1', [classId]);
+    if (classRes.rowCount === 0) return res.status(404).json({ error: 'Class not found' });
+
+    const classData = classRes.rows[0];
+    if (classData.creator_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only class creator or admin can create exams' });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO exams(class_id, title, total_marks, created_by) VALUES($1,$2,$3,$4) RETURNING *',
+      [classId, title, totalMarks, req.user.id]
     );
 
-    if (classCheck.rowCount === 0)
-      return res.status(404).json({ error: 'Class not found' });
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
-    // Prevent duplicate join
-    const alreadyJoined = await pool.query(
-      'SELECT * FROM class_students WHERE class_id=$1 AND user_id=$2',
-      [classId, req.user.id]
-    );
+// Submit exam (students only)
+app.post('/api/exams/:id/submit', authMiddleware, async (req, res) => {
+  const examId = req.params.id;
+  const { score } = req.body;
+  if (score == null) return res.status(400).json({ error: 'Score required' });
 
-    if (alreadyJoined.rowCount > 0)
-      return res.status(400).json({ error: 'Already joined' });
+  try {
+    await pool.query('INSERT INTO exam_submissions(exam_id, user_id, score) VALUES($1,$2,$3)', [
+      examId,
+      req.user.id,
+      score,
+    ]);
+    await pool.query('INSERT INTO certificates(user_id, exam_id, score) VALUES($1,$2,$3)', [
+      req.user.id,
+      examId,
+      score,
+    ]);
+    res.json({ message: 'Exam submitted and certificate generated' });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: 'Failed to submit exam' });
+  }
+});
 
-    await pool.query(
-      'INSERT INTO class_students(class_id, user_id) VALUES($1,$2)',
-      [classId, req.user.id]
-    );
-
-    res.json({ message: 'Joined class successfully' });
+// Get certificates
+app.get('/api/certificates', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM certificates WHERE user_id=$1', [req.user.id]);
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -209,45 +219,37 @@ app.post('/api/classes/:id/join', authMiddleware, async (req, res) => {
 });
 
 // --------------------
-// WALLET
+// Wallet Routes
 // --------------------
-
 app.get('/api/wallet', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM wallets WHERE user_id=$1',
-      [req.user.id]
-    );
+    const result = await pool.query('SELECT * FROM wallets WHERE user_id=$1', [req.user.id]);
     res.json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
 app.post('/api/wallet/topup', authMiddleware, async (req, res) => {
-  let { amount } = req.body;
-
-  amount = parseFloat(amount);
-
-  if (isNaN(amount) || amount <= 0)
-    return res.status(400).json({ error: 'Invalid amount' });
+  const { amount } = req.body;
+  if (!amount) return res.status(400).json({ error: 'Amount required' });
 
   try {
-    await pool.query(
-      'UPDATE wallets SET balance = balance + $1 WHERE user_id=$2',
-      [amount, req.user.id]
-    );
-
+    await pool.query('UPDATE wallets SET balance = balance + $1 WHERE user_id=$2', [
+      amount,
+      req.user.id,
+    ]);
     res.json({ message: 'Wallet topped up successfully' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
 // --------------------
-// START SERVER
+// Start Server
 // --------------------
+app.get('/', (req, res) => res.send('ILMIO BACKEND VERSION 6 RUNNING'));
 
-app.listen(PORT, () => {
-  console.log(`ILMIO backend running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`ILMIO backend running on port ${PORT}`));
